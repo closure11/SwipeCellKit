@@ -22,22 +22,24 @@ struct ActionsViewLayoutContext {
     let orientation: SwipeActionsOrientation
     let contentSize: CGSize
     let visibleWidth: CGFloat
-    let minimumButtonWidth: CGFloat
+    let buttonWidths: [CGFloat]
     
-    init(numberOfActions: Int, orientation: SwipeActionsOrientation, contentSize: CGSize = .zero, visibleWidth: CGFloat = 0, minimumButtonWidth: CGFloat = 0) {
+    init(numberOfActions: Int, orientation: SwipeActionsOrientation, contentSize: CGSize = .zero, visibleWidth: CGFloat = 0, buttonWidths: [CGFloat]) {
         self.numberOfActions = numberOfActions
         self.orientation = orientation
         self.contentSize = contentSize
         self.visibleWidth = visibleWidth
-        self.minimumButtonWidth = minimumButtonWidth
+        self.buttonWidths = buttonWidths
     }
     
     static func newContext(for actionsView: SwipeActionsView) -> ActionsViewLayoutContext {
-        return ActionsViewLayoutContext(numberOfActions: actionsView.actions.count,
-                                        orientation: actionsView.orientation,
-                                        contentSize: actionsView.contentSize,
-                                        visibleWidth: actionsView.visibleWidth,
-                                        minimumButtonWidth: actionsView.minimumButtonWidth)
+        return ActionsViewLayoutContext(
+            numberOfActions: actionsView.actions.count,
+            orientation: actionsView.orientation,
+            contentSize: actionsView.contentSize,
+            visibleWidth: actionsView.visibleWidth,
+            buttonWidths: actionsView.buttonWidths
+        )
     }
 }
 
@@ -49,15 +51,21 @@ class BorderTransitionLayout: SwipeTransitionLayout {
     
     func layout(view: UIView, atIndex index: Int, with context: ActionsViewLayoutContext) {
         let diff = context.visibleWidth - context.contentSize.width
-        view.frame.origin.x = (CGFloat(index) * context.contentSize.width / CGFloat(context.numberOfActions) + diff) * context.orientation.scale
+        let totalWidth = context.buttonWidths.reduce(0, +)
+        if totalWidth > 0 {
+            view.frame.origin.x = context.buttonWidths.prefix(index).reduce(0) { total, next in
+                total + ((next / totalWidth) * context.contentSize.width + diff) * context.orientation.scale
+            }
+        }
     }
     
     func visibleWidthsForViews(with context: ActionsViewLayoutContext) -> [CGFloat] {
         let diff = context.visibleWidth - context.contentSize.width
-        let visibleWidth = context.contentSize.width / CGFloat(context.numberOfActions) + diff
+        let totalWidth = context.buttonWidths.reduce(0, +)
 
-        // visible widths are all the same regardless of the action view position
-        return (0..<context.numberOfActions).map({ _ in visibleWidth })
+        return context.buttonWidths.map {
+            totalWidth > 0 ? ($0 / totalWidth) * context.contentSize.width + diff : 0
+        }
     }
 }
 
@@ -67,22 +75,24 @@ class DragTransitionLayout: SwipeTransitionLayout {
     }
     
     func layout(view: UIView, atIndex index: Int, with context: ActionsViewLayoutContext) {
-        view.frame.origin.x = (CGFloat(index) * context.minimumButtonWidth) * context.orientation.scale
+        view.frame.origin.x = context.buttonWidths.prefix(index).reduce(0, +) * context.orientation.scale
     }
     
     func visibleWidthsForViews(with context: ActionsViewLayoutContext) -> [CGFloat] {
-        return (0..<context.numberOfActions)
-            .map({ max(0, min(context.minimumButtonWidth, context.visibleWidth - (CGFloat($0) * context.minimumButtonWidth))) })
+        return (0..<context.numberOfActions).map {
+            max(0, min(context.buttonWidths[$0], context.visibleWidth - context.buttonWidths.prefix($0).reduce(0, +)))
+        }
     }
 }
 
 class RevealTransitionLayout: DragTransitionLayout {
     override func container(view: UIView, didChangeVisibleWidthWithContext context: ActionsViewLayoutContext) {
-        let width = context.minimumButtonWidth * CGFloat(context.numberOfActions)
+        let width = context.buttonWidths.reduce(0, +)
         view.bounds.origin.x = (width - context.visibleWidth) * context.orientation.scale
     }
     
     override func visibleWidthsForViews(with context: ActionsViewLayoutContext) -> [CGFloat] {
-        return super.visibleWidthsForViews(with: context).reversed()
+        return super.visibleWidthsForViews(with: context)
+            .reversed()
     }
 }

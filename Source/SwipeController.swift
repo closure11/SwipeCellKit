@@ -421,7 +421,7 @@ extension SwipeController: SwipeActionsViewDelegate {
         guard let swipeable = self.swipeable, let actionsContainerView = self.actionsContainerView else { return }
         guard let actionsView = swipeable.actionsView, let indexPath = swipeable.indexPath else { return }
 
-        let newCenter = swipeable.bounds.midX - (swipeable.bounds.width + actionsView.minimumButtonWidth) * actionsView.orientation.scale
+        let newCenter = swipeable.bounds.midX - (swipeable.bounds.width + (actionsView.buttonWidths.first ?? 0)) * actionsView.orientation.scale
         
         action.completionHandler = { [weak self] style in
             guard let `self` = self else { return }

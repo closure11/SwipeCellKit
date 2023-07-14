@@ -32,7 +32,7 @@ class SwipeActionsView: UIView {
     
     var buttons: [SwipeActionButton] = []
     
-    var minimumButtonWidth: CGFloat = 0
+    var buttonWidths: [CGFloat] = []
     var maximumImageHeight: CGFloat {
         return actions.reduce(0, { initial, next in max(initial, next.image?.size.height ?? 0) })
     }
@@ -57,13 +57,15 @@ class SwipeActionsView: UIView {
             setNeedsLayout()
             layoutIfNeeded()
             
-            notifyVisibleWidthChanged(oldWidths: preLayoutVisibleWidths,
-                                      newWidths: transitionLayout.visibleWidthsForViews(with: layoutContext))
+            notifyVisibleWidthChanged(
+                oldWidths: preLayoutVisibleWidths,
+                newWidths: transitionLayout.visibleWidthsForViews(with: layoutContext)
+            )
         }
     }
 
     var preferredWidth: CGFloat {
-        return minimumButtonWidth * CGFloat(actions.count) + safeAreaMargin
+        return buttonWidths.reduce(0, +) + safeAreaMargin
     }
 
     var contentSize: CGSize {
@@ -86,12 +88,13 @@ class SwipeActionsView: UIView {
          safeAreaInsetView: UIView,
          options: SwipeOptions,
          orientation: SwipeActionsOrientation,
-         actions: [SwipeAction]) {
-        
+         actions: [SwipeAction]
+    ) {
         self.safeAreaInsetView = safeAreaInsetView
         self.options = options
         self.orientation = orientation
         self.actions = actions.reversed()
+        self.buttonWidths = actions.map { _ in .zero }
         
         switch options.transitionStyle {
         case .border:
@@ -102,7 +105,7 @@ class SwipeActionsView: UIView {
             transitionLayout = DragTransitionLayout()
         }
         
-        self.layoutContext = ActionsViewLayoutContext(numberOfActions: actions.count, orientation: orientation)
+        self.layoutContext = ActionsViewLayoutContext(numberOfActions: actions.count, orientation: orientation, buttonWidths: buttonWidths)
         
         feedbackGenerator = SwipeFeedback(style: .light)
         feedbackGenerator.prepare()
@@ -150,13 +153,13 @@ class SwipeActionsView: UIView {
         
         let maximum = options.maximumButtonWidth ?? (size.width - 30) / CGFloat(actions.count)
         let minimum = options.minimumButtonWidth ?? min(maximum, 74)
-        minimumButtonWidth = buttons.reduce(minimum, { initial, next in max(initial, next.preferredWidth(maximum: maximum)) })
-        
-        
+        buttonWidths = []
         buttons.enumerated().forEach { (index, button) in
             let action = actions[index]
             let frame = CGRect(origin: .zero, size: CGSize(width: bounds.width, height: bounds.height))
-            let wrapperView = SwipeActionButtonWrapperView(frame: frame, action: action, orientation: orientation, contentWidth: minimumButtonWidth)
+            let buttonWidth = max(minimum, button.preferredWidth(maximum: maximum))
+            buttonWidths.append(buttonWidth)
+            let wrapperView = SwipeActionButtonWrapperView(frame: frame, action: action, orientation: orientation, contentWidth: buttonWidth)
             wrapperView.translatesAutoresizingMaskIntoConstraints = false
             wrapperView.addSubview(button)
             
@@ -245,12 +248,14 @@ class SwipeActionsView: UIView {
             oldWidths.enumerated().forEach { index, oldWidth in
                 let newWidth = newWidths[index]
                 if oldWidth != newWidth {
-                    let context = SwipeActionTransitioningContext(actionIdentifier: self.actions[index].identifier,
-                                                                  button: self.buttons[index],
-                                                                  newPercentVisible: newWidth / self.minimumButtonWidth,
-                                                                  oldPercentVisible: oldWidth / self.minimumButtonWidth,
-                                                                  wrapperView: self.subviews[index])
-                    
+                    let context = SwipeActionTransitioningContext(
+                        actionIdentifier: self.actions[index].identifier,
+                        button: self.buttons[index],
+                        newPercentVisible: newWidth / self.buttonWidths[index],
+                        oldPercentVisible: oldWidth / self.buttonWidths[index],
+                        wrapperView: self.subviews[index]
+                    )
+
                     self.actions[index].transitionDelegate?.didTransition(with: context)
                 }
             }
@@ -271,7 +276,6 @@ class SwipeActionsView: UIView {
     
     override func layoutSubviews() {
         super.layoutSubviews()
-        
         for subview in subviews.enumerated() {
             transitionLayout.layout(view: subview.element, atIndex: subview.offset, with: layoutContext)
         }
@@ -284,8 +288,7 @@ class SwipeActionsView: UIView {
 
 class SwipeActionButtonWrapperView: UIView {
     let contentRect: CGRect
-    var actionBackgroundColor: UIColor?
-    
+
     init(frame: CGRect, action: SwipeAction, orientation: SwipeActionsOrientation, contentWidth: CGFloat) {
         switch orientation {
         case .left:
@@ -299,15 +302,6 @@ class SwipeActionButtonWrapperView: UIView {
         configureBackgroundColor(with: action)
     }
     
-    override func draw(_ rect: CGRect) {
-        super.draw(rect)
-        
-        if let actionBackgroundColor = self.actionBackgroundColor, let context = UIGraphicsGetCurrentContext() {
-            actionBackgroundColor.setFill()
-            context.fill(rect);
-        }
-    }
-    
     func configureBackgroundColor(with action: SwipeAction) {
         guard action.hasBackgroundColor else {
             isOpaque = false
@@ -315,28 +309,28 @@ class SwipeActionButtonWrapperView: UIView {
         }
         
         if let backgroundColor = action.backgroundColor {
-            actionBackgroundColor = backgroundColor
+            self.backgroundColor = backgroundColor
         } else {
             switch action.style {
             case .destructive:
             #if canImport(Combine)
                 if #available(iOS 13.0, *) {
-                    actionBackgroundColor = UIColor.systemRed
+                    backgroundColor = UIColor.systemRed
                 } else {
-                    actionBackgroundColor = #colorLiteral(red: 1, green: 0.2352941176, blue: 0.1882352941, alpha: 1)
+                    backgroundColor = #colorLiteral(red: 1, green: 0.2352941176, blue: 0.1882352941, alpha: 1)
                 }
             #else
-                actionBackgroundColor = #colorLiteral(red: 1, green: 0.2352941176, blue: 0.1882352941, alpha: 1)
+                backgroundColor = #colorLiteral(red: 1, green: 0.2352941176, blue: 0.1882352941, alpha: 1)
             #endif
             default:
             #if canImport(Combine)
                 if #available(iOS 13.0, *) {
-                    actionBackgroundColor = UIColor.systemGray3
+                    backgroundColor = UIColor.systemGray3
                 } else {
-                    actionBackgroundColor = #colorLiteral(red: 0.7803494334, green: 0.7761332393, blue: 0.7967314124, alpha: 1)
+                    backgroundColor = #colorLiteral(red: 0.7803494334, green: 0.7761332393, blue: 0.7967314124, alpha: 1)
                 }
             #else
-                actionBackgroundColor = #colorLiteral(red: 0.7803494334, green: 0.7761332393, blue: 0.7967314124, alpha: 1)
+                backgroundColor = #colorLiteral(red: 0.7803494334, green: 0.7761332393, blue: 0.7967314124, alpha: 1)
             #endif
             }
         }
